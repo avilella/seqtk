@@ -1502,22 +1502,32 @@ static void fqc_aux(posstat_t *p, int pos, int64_t allq[94], double perr[94], in
 int stk_fqchk(int argc, char *argv[])
 {
 	gzFile fp;
-	kseq_t *seq;
+	kseq_t *seq, last;
+	int prev_check = 0;
+
 	int i, c, k, max_len = 0, min_len = 0x7fffffff, max_alloc = 0, offset = 33, n_diffQ = 0, qthres = 20;
 	int64_t tot_len = 0, n = 0;
 	double perr[94];
 	posstat_t all, *pos = 0;
 
-	while ((c = getopt(argc, argv, "q:")) >= 0)
-		if (c == 'q') qthres = atoi(optarg);
+	while ((c = getopt(argc, argv, "pq:")) >= 0) {
+		switch (c) {
+			case 'p': prev_check = 1; break;
+		        case 'q': qthres = atoi(optarg); break;
+		}
+	}
 
 	if (optind == argc) {
 		fprintf(stderr, "Usage: seqtk fqchk [-q %d] <in.fq>\n", qthres);
-		fprintf(stderr, "Note: use -q0 to get the distribution of all quality values\n");
+		fprintf(stderr, "Options:\n");
+		fprintf(stderr, "         -q INT      quality score\n");
+		fprintf(stderr, "            Note: use -q0 to get the distribution of all quality values\n");
+		fprintf(stderr, "         -p          check if previous read_id is same (Illumina fastq QC)\n");
 		return 1;
 	}
 	fp = (strcmp(argv[optind], "-") == 0)? gzdopen(fileno(stdin), "r") : gzopen(argv[optind], "r");
 	seq = kseq_init(fp);
+	memset(&last, 0, sizeof(kseq_t));
 	for (k = 0; k <= 93; ++k)
 		perr[k] = pow(10., -.1 * k);
 	perr[0] = perr[1] = perr[2] = perr[3] = .5;
@@ -1542,6 +1552,14 @@ int stk_fqchk(int argc, char *argv[])
 			++pos[i].q[q];
 			++pos[i].b[b];
 		}
+		if (1 == prev_check) {
+		    if (last.name.l) {
+			if (0 == strcmp(last.name.s, seq->name.s))
+			    fprintf(stderr, "[%s] Same sequence names in consecutive reads: %s == %s\n", __func__, last.name.s, seq->name.s);
+		    }
+		    cpy_kseq(&last, seq);
+		}
+
 	}
 	kseq_destroy(seq);
 	gzclose(fp);
